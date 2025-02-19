@@ -165,12 +165,7 @@ from
       ) c
       on c.ParentBroker = bc.broker;
 {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "%sql\n",
+
     "WITH ResearchCosts AS (\n",
     "    SELECT \n",
     "        A2.ParentBroker AS Brokers,\n",
@@ -208,11 +203,7 @@ from
    ]
   },
   {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
+   
     "%sql\n",
     "WITH ResearchCosts AS (\n",
     "    SELECT \n",
@@ -253,11 +244,7 @@ from
    ]
   },
   {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
+
     "%sql\n",
     "WITH ResearchCosts AS (\n",
     "    SELECT \n",
@@ -292,11 +279,7 @@ from
    ]
   },
   {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
+  
     "%sql\n",
     "WITH ResearchCosts AS (\n",
     "    SELECT \n",
@@ -331,11 +314,7 @@ from
    ]
   },
   {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
+   
     "%sql\n",
     "WITH ResearchCosts AS (\n",
     "    SELECT \n",
@@ -379,11 +358,7 @@ from
    ]
   },
   {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
+ 
     "%sql\n",
     "SELECT \n",
     "    Attendee, \n",

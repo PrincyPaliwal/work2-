@@ -166,240 +166,201 @@ from
       on c.ParentBroker = bc.broker;
 {
 
-    "WITH ResearchCosts AS (\n",
-    "    SELECT \n",
-    "        A2.ParentBroker AS Brokers,\n",
-    "        A2.research_splits AS SplitTeam,\n",
-    "        A2.ResourceProvider AS Research_Name,\n",
-    "        CAST(SUM(A2.AdjustedValue) AS BIGINT) AS Research_Cost\n",
-    "    FROM freerider.sigma_input.a2rawdata A2\n",
-    "    WHERE A2.ParentBroker <> 'Other'\n",
-    "     AND A2.StartDate >= {{dateRangeFilter-1}}.start -- Parameter substitution\n",
-    "      AND A2.StartDate <= {{dateRangeFilter-1}}.end\n",
-    "    GROUP BY A2.ParentBroker, A2.ResourceProvider, A2.research_splits\n",
-    "\n",
-    "),\n",
-    "Commissions AS (\n",
-    "    SELECT \n",
-    "        CRD.ParentBroker AS Brokers,\n",
-    "        CRD.SplitTeam AS SplitTeam,\n",
-    "        CAST(SUM(CRD.TotalCommission) AS INT) AS Commission\n",
-    "    FROM freerider.sigma_input.commission CRD\n",
-    "where  CRD.TradeDate >= {{dateRangeFilter-1}}.start -- Parameter substitution\n",
-    "      AND CRD.TradeDate <= {{dateRangeFilter-1}}.end\n",
-    "    GROUP BY CRD.ParentBroker, CRD.SplitTeam\n",
-    ")\n",
-    "SELECT \n",
-    "    COALESCE(RC.Brokers, C.Brokers) AS Brokers,\n",
-    "    COALESCE(RC.SplitTeam, C.SplitTeam) AS SplitTeam,\n",
-    "    COALESCE(RC.Research_Name, 'N/A') AS Research_Name,\n",
-    "    COALESCE(RC.Research_Cost, 0) AS Research_Cost,\n",
-    "    COALESCE(C.Commission, 0) AS Total_Commission,\n",
-    "    COALESCE(C.Commission, 0) - COALESCE(RC.Research_Cost, 0) AS Delta\n",
-    "FROM ResearchCosts RC\n",
-    "FULL OUTER JOIN Commissions C\n",
-    "    ON RC.Brokers = C.Brokers AND RC.SplitTeam = C.SplitTeam\n",
-    "ORDER BY Brokers ASC"
-   ]
-  },
-  {
-   
-    "%sql\n",
-    "WITH ResearchCosts AS (\n",
-    "    SELECT \n",
-    "        CS.FULLNAME AS Individual,\n",
-    "        CS.Account AS Account,\n",
-    "        CAST(SUM(A2.AdjustedValue) AS INT) AS Research_Cost\n",
-    "    FROM freerider.sigma_input.a2rawdata AS A2\n",
-    "    INNER JOIN freerider.sigma_input.Commission_split AS CS\n",
-    "        ON A2.Attendee = CS.FULLNAME\n",
-    "    WHERE A2.ParentBroker <> 'Other'\n",
-    "      AND A2.StartDate >= {{dateRangeFilter-1}}.start -- Parameter substitution\n",
-    "      AND A2.StartDate <= {{dateRangeFilter-1}}.end -- Parameter substitution\n",
-    "    GROUP BY CS.FULLNAME, CS.Account\n",
-    "),\n",
-    "Commissions AS (\n",
-    "    SELECT \n",
-    "        CS.FULLNAME AS Individual,\n",
-    "        CS.Account AS Account,\n",
-    "        CAST(SUM(CRD.TotalCommission) AS INT) AS Commission\n",
-    "    FROM freerider.sigma_input.commission AS CRD\n",
-    "    INNER JOIN freerider.sigma_input.Commission_split AS CS\n",
-    "        ON CRD.Account = CS.Account\n",
-    "    WHERE CRD.ResearchTeam <> 'Other'\n",
-    "      AND CRD.TradeDate >= {{dateRangeFilter-1}}.start -- Parameter substitution\n",
-    "      AND CRD.TradeDate <= {{dateRangeFilter-1}}.end -- Parameter substitution\n",
-    "    GROUP BY CS.FULLNAME, CS.Account\n",
-    ")\n",
-    "SELECT \n",
-    "    COALESCE(RC.Individual, C.Individual) AS Individual,\n",
-    "    COALESCE(RC.Account, C.Account) AS Account,\n",
-    "    COALESCE(RC.Research_Cost, 0) AS Research_Cost,\n",
-    "    COALESCE(C.Commission, 0) AS Commission,\n",
-    "    COALESCE(C.Commission, 0) - COALESCE(RC.Research_Cost, 0) AS Delta\n",
-    "FROM ResearchCosts AS RC\n",
-    "FULL OUTER JOIN Commissions AS C\n",
-    "    ON RC.Individual = C.Individual AND RC.Account = C.Account\n",
-    "ORDER BY Individual ASC"
-   ]
-  },
-  {
+   %sql
+WITH ResearchCosts AS (
+    SELECT 
+        A2.ParentBroker AS Brokers,
+        A2.research_splits AS SplitTeam,
+        A2.ResourceProvider AS Research_Name,
+        CAST(SUM(A2.AdjustedValue) AS BIGINT) AS Research_Cost
+    FROM freerider.sigma_input.a2rawdata A2
+    WHERE A2.ParentBroker <> 'Other'
+     AND A2.StartDate >= {{dateRangeFilter-1}}.start -- Parameter substitution
+      AND A2.StartDate <= {{dateRangeFilter-1}}.end
+    GROUP BY A2.ParentBroker, A2.ResourceProvider, A2.research_splits
 
-    "%sql\n",
-    "WITH ResearchCosts AS (\n",
-    "    SELECT \n",
-    "        research_splits AS Team,\n",
-    "        CAST(SUM(AdjustedValue) AS INT) AS Research_Cost\n",
-    "    FROM freerider.sigma_input.a2rawdata\n",
-    "    WHERE ParentBroker <> 'Other' \n",
-    "      AND research_splits <> 'Compliance / Operations'\n",
-    "      AND `StartDate` >= COALESCE({{dateRangeFilter-1}}.start, DATE_TRUNC('year', CURRENT_DATE))\n",
-    "      AND `StartDate` <= COALESCE({{dateRangeFilter-1}}.end, CURRENT_DATE)\n",
-    "    GROUP BY research_splits\n",
-    "),\n",
-    "Commissions AS (\n",
-    "    SELECT \n",
-    "        SplitTeam AS Team,\n",
-    "        CAST(SUM(TotalCommission) AS INT) AS Commission\n",
-    "    FROM freerider.sigma_input.commission\n",
-    "    WHERE ResearchTeam <> 'Other'\n",
-    "    AND `TradeDate` >= COALESCE({{dateRangeFilter-1}}.start, DATE_TRUNC('year', CURRENT_DATE))\n",
-    "    AND `TradeDate` <= COALESCE({{dateRangeFilter-1}}.end, CURRENT_DATE)\n",
-    "    GROUP BY SplitTeam\n",
-    ")\n",
-    "SELECT \n",
-    "    COALESCE(RC.Team, C.Team) AS Team,\n",
-    "    COALESCE(RC.Research_Cost, 0) AS Research_Cost,\n",
-    "    COALESCE(C.Commission, 0) AS Commission,\n",
-    "    COALESCE(C.Commission, 0) - COALESCE(RC.Research_Cost, 0) AS Delta\n",
-    "FROM ResearchCosts RC\n",
-    "FULL OUTER JOIN Commissions C\n",
-    "    ON RC.Team = C.Team\n",
-    "ORDER BY Team ASC"
-   ]
-  },
-  {
-  
-    "%sql\n",
-    "WITH ResearchCosts AS (\n",
-    "    SELECT \n",
-    "        A2.ParentBroker AS Brokers,\n",
-    "        A2.ResourceProvider AS Research_Name,\n",
-    "        CAST(SUM(A2.AdjustedValue) AS BIGINT) AS Research_Cost\n",
-    "    FROM freerider.sigma_input.a2rawdata AS A2\n",
-    "    WHERE A2.ParentBroker <> 'Other'\n",
-    "     AND A2.StartDate >= {{dateRangeFilter-1}}.start -- Parameter substitution\n",
-    "      AND A2.StartDate <= {{dateRangeFilter-1}}.end\n",
-    "    GROUP BY A2.ParentBroker, A2.ResourceProvider\n",
-    "),\n",
-    "Commissions AS (\n",
-    "    SELECT \n",
-    "        CRD.ParentBroker AS Brokers,\n",
-    "        CAST(SUM(CRD.TotalCommission) AS INT) AS Commission\n",
-    "    FROM freerider.sigma_input.commission AS CRD\n",
-    "      where CRD.TradeDate >= {{dateRangeFilter-1}}.start -- Parameter substitution\n",
-    "      AND CRD.TradeDate <= {{dateRangeFilter-1}}.end\n",
-    "    GROUP BY CRD.ParentBroker\n",
-    ")\n",
-    "SELECT \n",
-    "    COALESCE(RC.Brokers, C.Brokers) AS Brokers,\n",
-    "    COALESCE(RC.Research_Name, 'N/A') AS Research_Name,\n",
-    "    COALESCE(RC.Research_Cost, 0) AS Research_Cost,\n",
-    "    COALESCE(C.Commission, 0) AS Total_Commission,\n",
-    "    COALESCE(C.Commission, 0) - COALESCE(RC.Research_Cost, 0) AS Delta\n",
-    "FROM ResearchCosts AS RC\n",
-    "FULL OUTER JOIN Commissions AS C\n",
-    "    ON RC.Brokers = C.Brokers\n",
-    "ORDER BY Brokers ASC"
-   ]
-  },
-  {
-   
-    "%sql\n",
-    "WITH ResearchCosts AS (\n",
-    "    SELECT \n",
-    "        A2.research_splits AS Team,\n",
-    "        A2.Attendee AS Name,\n",
-    "        CS.Account AS Account,\n",
-    "        ROUND(SUM(A2.AdjustedValue), 0) AS ResearchCost\n",
-    "    FROM freerider.sigma_input.a2rawdata A2\n",
-    "    JOIN freerider.sigma_input.commission_split CS \n",
-    "        ON A2.Attendee = CS.FULLNAME\n",
-    "    WHERE A2.StartDate >= {{dateRangeFilter}}.start \n",
-    "      AND A2.StartDate <= {{dateRangeFilter}}.end\n",
-    "      AND A2.ParentBroker ={{Parent-Broker}}\n",
-    "    GROUP BY A2.research_splits, A2.Attendee, CS.Account\n",
-    "),\n",
-    "Commissions AS (\n",
-    "    SELECT\n",
-    "        C.SplitTeam AS Team,\n",
-    "        CS.FULLNAME AS Name,\n",
-    "        C.Account AS Account,\n",
-    "        ROUND(SUM(C.TotalCommission), 0) AS Commission\n",
-    "    FROM freerider.sigma_input.commission C\n",
-    "    JOIN freerider.sigma_input.commission_split CS \n",
-    "        ON C.Account = CS.Account\n",
-    "    WHERE C.TradeDate >= {{dateRangeFilter}}.start \n",
-    "      AND C.TradeDate <= {{dateRangeFilter}}.end\n",
-    "      AND C.ParentBroker ={{Parent-Broker}}\n",
-    "    GROUP BY C.SplitTeam, CS.FULLNAME, C.Account\n",
-    ")\n",
-    "SELECT \n",
-    "    COALESCE(RC.Team, C.Team) AS Team,\n",
-    "    COALESCE(RC.Name, C.Name) AS Name,\n",
-    "    COALESCE(C.Account, RC.Account) AS Account,\n",
-    "    COALESCE(RC.ResearchCost, 0) AS ResearchCost,\n",
-    "    COALESCE(C.Commission, 0) AS Commission,\n",
-    "    COALESCE(C.Commission, 0) - COALESCE(RC.ResearchCost, 0) AS Delta\n",
-    "FROM ResearchCosts RC\n",
-    "RIGHT JOIN Commissions C \n",
-    "    ON RC.Name = C.Name\n",
-    "ORDER BY Team, Name, Account"
-   ]
-  },
-  {
- 
-    "%sql\n",
-    "SELECT \n",
-    "    Attendee, \n",
-    "    COUNT(*) AS Unreconciled\n",
-    "FROM \n",
-    "    freerider.sigma_input.a2rawdata A2\n",
-    "WHERE \n",
-    "    Status = 'None'\n",
-    "    AND (BuysideStatus != 'Canceled' OR BuysideStatus IS NULL)\n",
-    "    AND IsReviewRequired = true\n",
-    "    AND StartDate >= make_date(YEAR({{dateRangeFilter}}.start), 1, 1)\n",
-    "    AND `Value` > 750\n",
-    "GROUP BY \n",
-    "    Attendee\n",
-    "ORDER BY \n",
-    "    Unreconciled DESC"
-   ]
-  }
- ],
- "metadata": {
-  "application/vnd.databricks.v1+notebook": {
-   "computePreferences": null,
-   "dashboards": [],
-   "environmentMetadata": {
-    "base_environment": "",
-    "environment_version": "2"
-   },
-   "language": "python",
-   "notebookMetadata": {
-    "pythonIndentUnit": 4
-   },
-   "notebookName": "Research And Commission Cost Dashboard For Traders",
-   "widgets": {}
-  },
-  "language_info": {
-   "name": "python"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 0
-}
+),
+Commissions AS (
+    SELECT 
+        CRD.ParentBroker AS Brokers,
+        CRD.SplitTeam AS SplitTeam,
+        CAST(SUM(CRD.TotalCommission) AS INT) AS Commission
+    FROM freerider.sigma_input.commission CRD
+where  CRD.TradeDate >= {{dateRangeFilter-1}}.start -- Parameter substitution
+      AND CRD.TradeDate <= {{dateRangeFilter-1}}.end
+    GROUP BY CRD.ParentBroker, CRD.SplitTeam
+)
+SELECT 
+    COALESCE(RC.Brokers, C.Brokers) AS Brokers,
+    COALESCE(RC.SplitTeam, C.SplitTeam) AS SplitTeam,
+    COALESCE(RC.Research_Name, 'N/A') AS Research_Name,
+    COALESCE(RC.Research_Cost, 0) AS Research_Cost,
+    COALESCE(C.Commission, 0) AS Total_Commission,
+    COALESCE(C.Commission, 0) - COALESCE(RC.Research_Cost, 0) AS Delta
+FROM ResearchCosts RC
+FULL OUTER JOIN Commissions C
+    ON RC.Brokers = C.Brokers AND RC.SplitTeam = C.SplitTeam
+ORDER BY Brokers ASC
+  %sql
+WITH ResearchCosts AS (
+    SELECT 
+        CS.FULLNAME AS Individual,
+        CS.Account AS Account,
+        CAST(SUM(A2.AdjustedValue) AS INT) AS Research_Cost
+    FROM freerider.sigma_input.a2rawdata AS A2
+    INNER JOIN freerider.sigma_input.Commission_split AS CS
+        ON A2.Attendee = CS.FULLNAME
+    WHERE A2.ParentBroker <> 'Other'
+      AND A2.StartDate >= {{dateRangeFilter-1}}.start -- Parameter substitution
+      AND A2.StartDate <= {{dateRangeFilter-1}}.end -- Parameter substitution
+    GROUP BY CS.FULLNAME, CS.Account
+),
+Commissions AS (
+    SELECT 
+        CS.FULLNAME AS Individual,
+        CS.Account AS Account,
+        CAST(SUM(CRD.TotalCommission) AS INT) AS Commission
+    FROM freerider.sigma_input.commission AS CRD
+    INNER JOIN freerider.sigma_input.Commission_split AS CS
+        ON CRD.Account = CS.Account
+    WHERE CRD.ResearchTeam <> 'Other'
+      AND CRD.TradeDate >= {{dateRangeFilter-1}}.start -- Parameter substitution
+      AND CRD.TradeDate <= {{dateRangeFilter-1}}.end -- Parameter substitution
+    GROUP BY CS.FULLNAME, CS.Account
+)
+SELECT 
+    COALESCE(RC.Individual, C.Individual) AS Individual,
+    COALESCE(RC.Account, C.Account) AS Account,
+    COALESCE(RC.Research_Cost, 0) AS Research_Cost,
+    COALESCE(C.Commission, 0) AS Commission,
+    COALESCE(C.Commission, 0) - COALESCE(RC.Research_Cost, 0) AS Delta
+FROM ResearchCosts AS RC
+FULL OUTER JOIN Commissions AS C
+    ON RC.Individual = C.Individual AND RC.Account = C.Account
+ORDER BY Individual ASC
+
+%sql
+WITH ResearchCosts AS (
+    SELECT 
+        research_splits AS Team,
+        CAST(SUM(AdjustedValue) AS INT) AS Research_Cost
+    FROM freerider.sigma_input.a2rawdata
+    WHERE ParentBroker <> 'Other' 
+      AND research_splits <> 'Compliance / Operations'
+      AND `StartDate` >= COALESCE({{dateRangeFilter-1}}.start, DATE_TRUNC('year', CURRENT_DATE))
+      AND `StartDate` <= COALESCE({{dateRangeFilter-1}}.end, CURRENT_DATE)
+    GROUP BY research_splits
+),
+Commissions AS (
+    SELECT 
+        SplitTeam AS Team,
+        CAST(SUM(TotalCommission) AS INT) AS Commission
+    FROM freerider.sigma_input.commission
+    WHERE ResearchTeam <> 'Other'
+    AND `TradeDate` >= COALESCE({{dateRangeFilter-1}}.start, DATE_TRUNC('year', CURRENT_DATE))
+    AND `TradeDate` <= COALESCE({{dateRangeFilter-1}}.end, CURRENT_DATE)
+    GROUP BY SplitTeam
+)
+SELECT 
+    COALESCE(RC.Team, C.Team) AS Team,
+    COALESCE(RC.Research_Cost, 0) AS Research_Cost,
+    COALESCE(C.Commission, 0) AS Commission,
+    COALESCE(C.Commission, 0) - COALESCE(RC.Research_Cost, 0) AS Delta
+FROM ResearchCosts RC
+FULL OUTER JOIN Commissions C
+    ON RC.Team = C.Team
+ORDER BY Team ASC
+
+%sql
+WITH ResearchCosts AS (
+    SELECT 
+        A2.ParentBroker AS Brokers,
+        A2.ResourceProvider AS Research_Name,
+        CAST(SUM(A2.AdjustedValue) AS BIGINT) AS Research_Cost
+    FROM freerider.sigma_input.a2rawdata AS A2
+    WHERE A2.ParentBroker <> 'Other'
+     AND A2.StartDate >= {{dateRangeFilter-1}}.start -- Parameter substitution
+      AND A2.StartDate <= {{dateRangeFilter-1}}.end
+    GROUP BY A2.ParentBroker, A2.ResourceProvider
+),
+Commissions AS (
+    SELECT 
+        CRD.ParentBroker AS Brokers,
+        CAST(SUM(CRD.TotalCommission) AS INT) AS Commission
+    FROM freerider.sigma_input.commission AS CRD
+      where CRD.TradeDate >= {{dateRangeFilter-1}}.start -- Parameter substitution
+      AND CRD.TradeDate <= {{dateRangeFilter-1}}.end
+    GROUP BY CRD.ParentBroker
+)
+SELECT 
+    COALESCE(RC.Brokers, C.Brokers) AS Brokers,
+    COALESCE(RC.Research_Name, 'N/A') AS Research_Name,
+    COALESCE(RC.Research_Cost, 0) AS Research_Cost,
+    COALESCE(C.Commission, 0) AS Total_Commission,
+    COALESCE(C.Commission, 0) - COALESCE(RC.Research_Cost, 0) AS Delta
+FROM ResearchCosts AS RC
+FULL OUTER JOIN Commissions AS C
+    ON RC.Brokers = C.Brokers
+ORDER BY Brokers ASC
+
+
+%sql
+WITH ResearchCosts AS (
+    SELECT 
+        A2.research_splits AS Team,
+        A2.Attendee AS Name,
+        CS.Account AS Account,
+        ROUND(SUM(A2.AdjustedValue), 0) AS ResearchCost
+    FROM freerider.sigma_input.a2rawdata A2
+    JOIN freerider.sigma_input.commission_split CS 
+        ON A2.Attendee = CS.FULLNAME
+    WHERE A2.StartDate >= {{dateRangeFilter}}.start 
+      AND A2.StartDate <= {{dateRangeFilter}}.end
+      AND A2.ParentBroker ={{Parent-Broker}}
+    GROUP BY A2.research_splits, A2.Attendee, CS.Account
+),
+Commissions AS (
+    SELECT
+        C.SplitTeam AS Team,
+        CS.FULLNAME AS Name,
+        C.Account AS Account,
+        ROUND(SUM(C.TotalCommission), 0) AS Commission
+    FROM freerider.sigma_input.commission C
+    JOIN freerider.sigma_input.commission_split CS 
+        ON C.Account = CS.Account
+    WHERE C.TradeDate >= {{dateRangeFilter}}.start 
+      AND C.TradeDate <= {{dateRangeFilter}}.end
+      AND C.ParentBroker ={{Parent-Broker}}
+    GROUP BY C.SplitTeam, CS.FULLNAME, C.Account
+)
+SELECT 
+    COALESCE(RC.Team, C.Team) AS Team,
+    COALESCE(RC.Name, C.Name) AS Name,
+    COALESCE(C.Account, RC.Account) AS Account,
+    COALESCE(RC.ResearchCost, 0) AS ResearchCost,
+    COALESCE(C.Commission, 0) AS Commission,
+    COALESCE(C.Commission, 0) - COALESCE(RC.ResearchCost, 0) AS Delta
+FROM ResearchCosts RC
+RIGHT JOIN Commissions C 
+    ON RC.Name = C.Name
+ORDER BY Team, Name, Account
+
+%sql
+SELECT 
+    Attendee, 
+    COUNT(*) AS Unreconciled
+FROM 
+    freerider.sigma_input.a2rawdata A2
+WHERE 
+    Status = 'None'
+    AND (BuysideStatus != 'Canceled' OR BuysideStatus IS NULL)
+    AND IsReviewRequired = true
+    AND StartDate >= make_date(YEAR({{dateRangeFilter}}.start), 1, 1)
+    AND `Value` > 750
+GROUP BY 
+    Attendee
+ORDER BY 
+    Unreconciled DESC 
 
 ```
 

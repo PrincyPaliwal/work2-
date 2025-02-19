@@ -164,7 +164,7 @@ from
               on bm.account = cs.account
       ) c
       on c.ParentBroker = bc.broker;
-{
+
 
    %sql
 WITH ResearchCosts AS (

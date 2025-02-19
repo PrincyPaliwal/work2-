@@ -228,7 +228,7 @@ def lambda_handler(event, context):
 
     return {"statusCode": 200, "body": "Pipeline executed successfully!"} 
 
-### ** Local Run**
+###   **Local Run**
 
     if __name__ == "__main__": 
      lambda_handler(None, None) 

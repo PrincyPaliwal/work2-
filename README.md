@@ -1,390 +1,139 @@
-# Real-Time Data Flow: SQL Server to Databricks to Sigma
+# AI-Powered Data Quality & Anomaly Detection
 
 ## Overview
+Ensuring high-quality data is crucial for accurate analytics and decision-making. This repository automates data cleansing, anomaly detection, and real-time alerting using **AWS Glue DataBrew, Databricks AutoML, and AWS CloudWatch**. It integrates seamlessly with AWS and Databricks to help teams monitor, govern, and enhance data quality efficiently.
 
-This project demonstrates a real-time data flow pipeline between SQL Server, Databricks, and Sigma. The pipeline ensures that transactional data from SQL Server is processed in Databricks and visualized in Sigma, enabling real-time analytics.
-
-## Components
-
-- **SQL Server**: Source database containing transactional data.
-- **Databricks**: Processes and transforms data for analytics.
-- **Sigma**: Visualization tool for real-time data insights.
-- **Azure Event Hub (Optional)**: Used for real-time data streaming.
-- **Delta Lake**: Stores processed data for efficient querying.
-
-## Workflow
-
-1. **Data Ingestion**: SQL Server transactions are streamed using Change Data Capture (CDC) or an ETL pipeline.
-2. **Databricks Processing**: Data is ingested into Databricks, cleaned, and stored in Delta Lake.
-3. **Data Transformation**: Business logic is applied to process raw data.
-4. **Sigma Integration**: The processed data is visualized using Sigma dashboards.
+## Features
+- **Automated Data Cleaning**: Uses AWS Glue DataBrew for preprocessing.
+- **AI-Powered Anomaly Detection**: Utilizes Databricks AutoML for real-time monitoring.
+- **Real-Time Alerting**: AWS CloudWatch integration for instant notifications.
+- **Cloud-Native Deployment**: Easily integrates with AWS Lambda and Databricks Jobs.
 
 ## Prerequisites
+Ensure you have:
+- **Databricks Workspace** (with appropriate AWS permissions)
+- **AWS IAM Roles** (with access to DataBrew, CloudWatch, and SNS)
+- **Databricks API Token** (for AutoML and job execution)
+- **AWS CLI configured** (`aws configure`)
 
-- SQL Server instance with transactional data.
-- Databricks workspace setup.
-- Sigma account for visualization.
-- (Optional) Azure Event Hub for real-time streaming.
-
-## Databricks SQL Queries
-
-### A2RawData Query
-```sql
-%sql
-  select
-    c.Ticker,
-    c.Issuer,
-    c.ResourceProvider,
-    c.StartDate,
-    c.EndDate,
-    c.AdjustedValue,
-    c.Location,
-    c.Region,
-    c.Format,
-    c.Value,
-    c.Currency,
-    c.Title,
-    c.AggregatedStatus,
-    c.Attendee,
-    c.Status,
-    c.Note,
-    c.Team,
-    c.CreatedAt,
-    c.LastUpdate,
-    c.CreatedBy,
-    c.LastUpdateBy,
-    c.InOffice,
-    c.AllDay,
-    c.CreatedByIngestor,
-    c.BuysideStatus,
-    c.IsReviewRequired,
-    c.Id,
-    c.SplitTeam as research_splits,
-    case
-      when bc.broker is not null then bc.broker
-      else 'Other'
-    END AS ParentBroker
-  from
-    (
-      select
-        max(resource_provider) as resource_provider,
-        broker
-      from
-        freerider.sigma_input.broker_mapping
-      group by
-        broker
-    ) bc
-      right join
-        (
-          select
-            r.*,
-            r.Value * CAST(rs.weighting AS DOUBLE) as AdjustedValue,
-            rs.SplitTeam
-          from
-            risk_sql_prod.dbo.a2arecords r
-              inner join
-                (
-                  SELECT distinct
-                    fullname,
-                    SplitTeam,
-                    weighting
-                  FROM
-                    (
-                      SELECT
-                        fullname,
-                        team as SplitTeam,
-                        weighting,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY fullname, team
-                            ORDER BY fullname, team DESC
-                          ) AS rn
-                      FROM
-                        freerider.sigma_input.research_split
-                    ) rs
-                  WHERE
-                    rn = 1
-                ) rs
-                on r.Attendee = rs.fullname
-        ) c
-        on c.ResourceProvider = bc.resource_provider;
+## Installation
+Clone the repository:
+```bash
+git clone https://github.kadellabs.com/digiclave/databricks-accelerators.git
+cd databricks-accelerators
 ```
 
-### Commission Query
-```sql
-%sql
-select
-  c.TradeDate,
-  c.Account,
-  c.BrokerCode,
-  c.ParentBroker,
-  c.BrokerName,
-  c.SecType,
-  c.TotalCommission,
-  c.Shares,
-  c.Timestamp,
-  c.team as SplitTeam,
-  case
-    when bc.resource_provider is not null then bc.resource_provider
-    else 'Other'
-  END AS ResearchTeam
-from
-  (
-    select
-      max(resource_provider) as resource_provider,
-      broker
-    from
-      freerider.sigma_input.broker_mapping
-    group by
-      broker
-  ) bc
-    right join
-      (
-        select
-          bm.TradeDate,
-          bm.Account,
-          bm.BrokerCode,
-          bm.ParentBroker,
-          bm.BrokerName,
-          bm.SecType,
-          bm.Shares,
-          bm.Timestamp,
-          cs.team,
-          bm.TotalCommission * CAST(cs.weighting AS DOUBLE) as TotalCommission
-        from
-          risk_sql_prod.core.brokercommission bm
-            inner join
-              (
-                select distinct
-                  team,
-                  weighting,
-                  account
-                from
-                  freerider.sigma_input.commission_split
-              ) cs
-              on bm.account = cs.account
-      ) c
-      on c.ParentBroker = bc.broker;
+## Code
 
+### **Import Required Libraries**
+```python
+import boto3 
+import requests 
+import json 
+import os 
+import time 
+import logging 
 
-   %sql
-WITH ResearchCosts AS (
-    SELECT 
-        A2.ParentBroker AS Brokers,
-        A2.research_splits AS SplitTeam,
-        A2.ResourceProvider AS Research_Name,
-        CAST(SUM(A2.AdjustedValue) AS BIGINT) AS Research_Cost
-    FROM freerider.sigma_input.a2rawdata A2
-    WHERE A2.ParentBroker <> 'Other'
-     AND A2.StartDate >= {{dateRangeFilter-1}}.start -- Parameter substitution
-      AND A2.StartDate <= {{dateRangeFilter-1}}.end
-    GROUP BY A2.ParentBroker, A2.ResourceProvider, A2.research_splits
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s") 
+log = logging.getLogger(__name__) 
 
-),
-Commissions AS (
-    SELECT 
-        CRD.ParentBroker AS Brokers,
-        CRD.SplitTeam AS SplitTeam,
-        CAST(SUM(CRD.TotalCommission) AS INT) AS Commission
-    FROM freerider.sigma_input.commission CRD
-where  CRD.TradeDate >= {{dateRangeFilter-1}}.start -- Parameter substitution
-      AND CRD.TradeDate <= {{dateRangeFilter-1}}.end
-    GROUP BY CRD.ParentBroker, CRD.SplitTeam
-)
-SELECT 
-    COALESCE(RC.Brokers, C.Brokers) AS Brokers,
-    COALESCE(RC.SplitTeam, C.SplitTeam) AS SplitTeam,
-    COALESCE(RC.Research_Name, 'N/A') AS Research_Name,
-    COALESCE(RC.Research_Cost, 0) AS Research_Cost,
-    COALESCE(C.Commission, 0) AS Total_Commission,
-    COALESCE(C.Commission, 0) - COALESCE(RC.Research_Cost, 0) AS Delta
-FROM ResearchCosts RC
-FULL OUTER JOIN Commissions C
-    ON RC.Brokers = C.Brokers AND RC.SplitTeam = C.SplitTeam
-ORDER BY Brokers ASC
-  %sql
-WITH ResearchCosts AS (
-    SELECT 
-        CS.FULLNAME AS Individual,
-        CS.Account AS Account,
-        CAST(SUM(A2.AdjustedValue) AS INT) AS Research_Cost
-    FROM freerider.sigma_input.a2rawdata AS A2
-    INNER JOIN freerider.sigma_input.Commission_split AS CS
-        ON A2.Attendee = CS.FULLNAME
-    WHERE A2.ParentBroker <> 'Other'
-      AND A2.StartDate >= {{dateRangeFilter-1}}.start -- Parameter substitution
-      AND A2.StartDate <= {{dateRangeFilter-1}}.end -- Parameter substitution
-    GROUP BY CS.FULLNAME, CS.Account
-),
-Commissions AS (
-    SELECT 
-        CS.FULLNAME AS Individual,
-        CS.Account AS Account,
-        CAST(SUM(CRD.TotalCommission) AS INT) AS Commission
-    FROM freerider.sigma_input.commission AS CRD
-    INNER JOIN freerider.sigma_input.Commission_split AS CS
-        ON CRD.Account = CS.Account
-    WHERE CRD.ResearchTeam <> 'Other'
-      AND CRD.TradeDate >= {{dateRangeFilter-1}}.start -- Parameter substitution
-      AND CRD.TradeDate <= {{dateRangeFilter-1}}.end -- Parameter substitution
-    GROUP BY CS.FULLNAME, CS.Account
-)
-SELECT 
-    COALESCE(RC.Individual, C.Individual) AS Individual,
-    COALESCE(RC.Account, C.Account) AS Account,
-    COALESCE(RC.Research_Cost, 0) AS Research_Cost,
-    COALESCE(C.Commission, 0) AS Commission,
-    COALESCE(C.Commission, 0) - COALESCE(RC.Research_Cost, 0) AS Delta
-FROM ResearchCosts AS RC
-FULL OUTER JOIN Commissions AS C
-    ON RC.Individual = C.Individual AND RC.Account = C.Account
-ORDER BY Individual ASC
-
-%sql
-WITH ResearchCosts AS (
-    SELECT 
-        research_splits AS Team,
-        CAST(SUM(AdjustedValue) AS INT) AS Research_Cost
-    FROM freerider.sigma_input.a2rawdata
-    WHERE ParentBroker <> 'Other' 
-      AND research_splits <> 'Compliance / Operations'
-      AND `StartDate` >= COALESCE({{dateRangeFilter-1}}.start, DATE_TRUNC('year', CURRENT_DATE))
-      AND `StartDate` <= COALESCE({{dateRangeFilter-1}}.end, CURRENT_DATE)
-    GROUP BY research_splits
-),
-Commissions AS (
-    SELECT 
-        SplitTeam AS Team,
-        CAST(SUM(TotalCommission) AS INT) AS Commission
-    FROM freerider.sigma_input.commission
-    WHERE ResearchTeam <> 'Other'
-    AND `TradeDate` >= COALESCE({{dateRangeFilter-1}}.start, DATE_TRUNC('year', CURRENT_DATE))
-    AND `TradeDate` <= COALESCE({{dateRangeFilter-1}}.end, CURRENT_DATE)
-    GROUP BY SplitTeam
-)
-SELECT 
-    COALESCE(RC.Team, C.Team) AS Team,
-    COALESCE(RC.Research_Cost, 0) AS Research_Cost,
-    COALESCE(C.Commission, 0) AS Commission,
-    COALESCE(C.Commission, 0) - COALESCE(RC.Research_Cost, 0) AS Delta
-FROM ResearchCosts RC
-FULL OUTER JOIN Commissions C
-    ON RC.Team = C.Team
-ORDER BY Team ASC
-
-%sql
-WITH ResearchCosts AS (
-    SELECT 
-        A2.ParentBroker AS Brokers,
-        A2.ResourceProvider AS Research_Name,
-        CAST(SUM(A2.AdjustedValue) AS BIGINT) AS Research_Cost
-    FROM freerider.sigma_input.a2rawdata AS A2
-    WHERE A2.ParentBroker <> 'Other'
-     AND A2.StartDate >= {{dateRangeFilter-1}}.start -- Parameter substitution
-      AND A2.StartDate <= {{dateRangeFilter-1}}.end
-    GROUP BY A2.ParentBroker, A2.ResourceProvider
-),
-Commissions AS (
-    SELECT 
-        CRD.ParentBroker AS Brokers,
-        CAST(SUM(CRD.TotalCommission) AS INT) AS Commission
-    FROM freerider.sigma_input.commission AS CRD
-      where CRD.TradeDate >= {{dateRangeFilter-1}}.start -- Parameter substitution
-      AND CRD.TradeDate <= {{dateRangeFilter-1}}.end
-    GROUP BY CRD.ParentBroker
-)
-SELECT 
-    COALESCE(RC.Brokers, C.Brokers) AS Brokers,
-    COALESCE(RC.Research_Name, 'N/A') AS Research_Name,
-    COALESCE(RC.Research_Cost, 0) AS Research_Cost,
-    COALESCE(C.Commission, 0) AS Total_Commission,
-    COALESCE(C.Commission, 0) - COALESCE(RC.Research_Cost, 0) AS Delta
-FROM ResearchCosts AS RC
-FULL OUTER JOIN Commissions AS C
-    ON RC.Brokers = C.Brokers
-ORDER BY Brokers ASC
-
-
-%sql
-WITH ResearchCosts AS (
-    SELECT 
-        A2.research_splits AS Team,
-        A2.Attendee AS Name,
-        CS.Account AS Account,
-        ROUND(SUM(A2.AdjustedValue), 0) AS ResearchCost
-    FROM freerider.sigma_input.a2rawdata A2
-    JOIN freerider.sigma_input.commission_split CS 
-        ON A2.Attendee = CS.FULLNAME
-    WHERE A2.StartDate >= {{dateRangeFilter}}.start 
-      AND A2.StartDate <= {{dateRangeFilter}}.end
-      AND A2.ParentBroker ={{Parent-Broker}}
-    GROUP BY A2.research_splits, A2.Attendee, CS.Account
-),
-Commissions AS (
-    SELECT
-        C.SplitTeam AS Team,
-        CS.FULLNAME AS Name,
-        C.Account AS Account,
-        ROUND(SUM(C.TotalCommission), 0) AS Commission
-    FROM freerider.sigma_input.commission C
-    JOIN freerider.sigma_input.commission_split CS 
-        ON C.Account = CS.Account
-    WHERE C.TradeDate >= {{dateRangeFilter}}.start 
-      AND C.TradeDate <= {{dateRangeFilter}}.end
-      AND C.ParentBroker ={{Parent-Broker}}
-    GROUP BY C.SplitTeam, CS.FULLNAME, C.Account
-)
-SELECT 
-    COALESCE(RC.Team, C.Team) AS Team,
-    COALESCE(RC.Name, C.Name) AS Name,
-    COALESCE(C.Account, RC.Account) AS Account,
-    COALESCE(RC.ResearchCost, 0) AS ResearchCost,
-    COALESCE(C.Commission, 0) AS Commission,
-    COALESCE(C.Commission, 0) - COALESCE(RC.ResearchCost, 0) AS Delta
-FROM ResearchCosts RC
-RIGHT JOIN Commissions C 
-    ON RC.Name = C.Name
-ORDER BY Team, Name, Account
-
-%sql
-SELECT 
-    Attendee, 
-    COUNT(*) AS Unreconciled
-FROM 
-    freerider.sigma_input.a2rawdata A2
-WHERE 
-    Status = 'None'
-    AND (BuysideStatus != 'Canceled' OR BuysideStatus IS NULL)
-    AND IsReviewRequired = true
-    AND StartDate >= make_date(YEAR({{dateRangeFilter}}.start), 1, 1)
-    AND `Value` > 750
-GROUP BY 
-    Attendee
-ORDER BY 
-    Unreconciled DESC 
-
+databrew = boto3.client("databrew") 
+cloudwatch = boto3.client("cloudwatch") 
+sns = boto3.client("sns")
 ```
 
-## Sigma Integration
+### **Environment Variables**
+```python
+DATABRICKS_HOST  
+DATABRICKS_TOKEN
+DATASET_NAME  
+PROJECT_NAME 
+SNS_TOPIC_ARN
+```
 
-1. Connect to Databricks using JDBC.
-2. Use SQL queries to extract insights from Delta tables.
-3. Create real-time dashboards with the transformed data.
+### **Create DataBrew Job**
+```python
+def create_databrew_job(): 
+    try: 
+        response = databrew.create_recipe( 
+            Name="DataCleaningRecipe", 
+            Steps=[ 
+                { "Action": {"Operation": "REMOVE_NULLS"}, "ConditionExpressions": [{"Condition": "IS_NULL", "TargetColumn": "transaction_amount"}] }, 
+                { "Action": {"Operation": "FILL_WITH_MEAN"}, "ConditionExpressions": [{"Condition": "IS_MISSING", "TargetColumn": "transaction_amount"}] } 
+            ] 
+        ) 
+        log.info(f"✅ DataBrew Recipe Created: {response['Name']}") 
+    except Exception as e:
+        log.error(f"❌ Error creating DataBrew job: {e}")
+```
 
-## Deployment
+### **Train AutoML Model in Databricks**
+```python
+def train_automl_model(): 
+    headers = {"Authorization": f"Bearer {DATABRICKS_TOKEN}", "Content-Type": "application/json"} 
+    payload = { 
+        "name": "AnomalyDetectionModel", 
+        "dataset_path": f"/mnt/{os.environ['DATABRICKS_MOUNT']}/cleaned_data", 
+        "target_col": "transaction_amount", 
+        "problem_type": "regression", 
+        "timeout_minutes": 30 
+    } 
+    response = requests.post( 
+        f"{DATABRICKS_HOST}/api/2.0/mlflow/experiments/create", 
+        headers=headers, 
+        json=payload 
+    ) 
+    if response.status_code == 200: 
+        experiment_id = response.json()["experiment_id"] 
+        log.info(f"✅ AutoML Model Training Started. Experiment ID: {experiment_id}") 
+        return experiment_id 
+    else: 
+        log.error(f"❌ Error starting AutoML model training: {response.text}") 
+        return None 
+```
 
-- Schedule a Databricks job to run the ETL pipeline at fixed intervals.
-- Use Databricks Delta Live Tables (DLT) for continuous processing.
-- Set up alerting and monitoring using Databricks or Sigma.
+### **Wait for AutoML Model Completion**
+```python
+def wait_for_automl_completion(experiment_id): 
+    headers = {"Authorization": f"Bearer {DATABRICKS_TOKEN}"} 
+    while True: 
+        response = requests.get( 
+            f"{DATABRICKS_HOST}/api/2.0/mlflow/experiments/get?experiment_id={experiment_id}", 
+            headers=headers 
+        ) 
+        status = response.json().get("lifecycle_stage") 
+        if status == "active": 
+            log.info("⚙️ AutoML Model is still training...") 
+            time.sleep(30) 
+        else: 
+            log.info("✅ AutoML Model Training Completed!") 
+            return 
+```
 
-## Conclusion
+### **Check for Anomalies**
+```python
+def check_anomalies(experiment_id): 
+    headers = {"Authorization": f"Bearer {DATABRICKS_TOKEN}"} 
+    response = requests.get( 
+        f"{DATABRICKS_HOST}/api/2.0/mlflow/runs/search?experiment_id={experiment_id}", 
+        headers=headers 
+    ) 
+    if response.status_code == 200: 
+        runs = response.json()["runs"] 
+        latest_run = runs[0] 
+        metrics = latest_run["data"]["metrics"] 
+        if metrics["rmse"] > 1000:  # Threshold for anomaly detection 
+            log.warning("🚨 Anomaly Detected! Sending Alert...") 
+            send_alert() 
+        else: 
+            log.info("✅ No anomalies detected.") 
+    else: 
+        log.error(f"❌ Error fetching model results: {response.text}") 
+```
 
-This pipeline enables real-time data flow from SQL Server to Databricks and visualization in Sigma, ensuring up-to-date insights for decision-making.
+### **Contributions**
+We welcome contributions! Submit a pull request or open an issue for feature requests or improvements.
 
-## Contributions
-Feel free to submit pull requests for improvements or additional features.
+### **License**
+This project is licensed under the MIT License.
 
-## License
-This project is licensed under the **MIT License**.
-
-## Contact
-For issues or support, reach out via **GitHub Issues** or email the project maintainer.

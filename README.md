@@ -128,8 +128,110 @@ def check_anomalies(experiment_id):
         else: 
             log.info("✅ No anomalies detected.") 
     else: 
-        log.error(f"❌ Error fetching model results: {response.text}") 
+        log.error(f"❌ Error fetching model results: {response.text}")
+
 ```
+### **Alternating Mechanism**
+def send_alert(): 
+
+    cloudwatch.put_metric_data( 
+
+        Namespace="DataQualityMonitoring", 
+
+        MetricData=[ 
+
+            { 
+
+                "MetricName": "AnomalyDetected", 
+
+                "Value": 1, 
+
+                "Unit": "Count" 
+
+            } 
+
+        ] 
+
+    ) 
+
+    sns.publish( 
+
+        TopicArn=SNS_TOPIC_ARN, 
+
+        Subject="🚨 Data Anomaly Detected!", 
+
+        Message="Anomalies detected in the latest dataset. Immediate action required." 
+
+    ) 
+
+    log.info("📢 Alert sent via SNS.") 
+
+ 
+
+    if SLACK_WEBHOOK_URL: 
+
+        requests.post(SLACK_WEBHOOK_URL, json={"text": "🚨 Data Anomaly Detected! Check your dataset."}) 
+
+        log.info("📢 Alert sent to Slack.") 
+
+ 
+    if PAGERDUTY_ROUTING_KEY: 
+
+        requests.post( 
+
+            "https://events.pagerduty.com/v2/enqueue", 
+
+            headers={"Content-Type": "application/json"}, 
+
+            json={ 
+
+                "routing_key": PAGERDUTY_ROUTING_KEY, 
+
+                "event_action": "trigger", 
+
+                "payload": { 
+
+                    "summary": "🚨 Data Anomaly Detected", 
+
+                    "source": "AWS Databricks", 
+
+                    "severity": "critical" 
+
+                } 
+
+            } 
+
+        ) 
+
+        log.info("📢 Alert sent to PagerDuty.") 
+
+### **EXECUTE WORKFLOW (AWS Lambda Handler)**
+def lambda_handler(event, context): 
+
+    log.info("🔄 Starting AI-Powered Data Quality Pipeline...") 
+
+    create_databrew_job() 
+
+    time.sleep(10)  # Wait for DataBrew job to start 
+
+ 
+
+    experiment_id = train_automl_model() 
+
+    if experiment_id: 
+
+        wait_for_automl_completion(experiment_id) 
+
+        check_anomalies(experiment_id) 
+
+ 
+
+    return {"statusCode": 200, "body": "Pipeline executed successfully!"} 
+
+### ** Local Run**
+
+    if __name__ == "__main__": 
+     lambda_handler(None, None) 
 
 ### **Contributions**
 We welcome contributions! Submit a pull request or open an issue for feature requests or improvements.
